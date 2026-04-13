@@ -12,7 +12,7 @@ import { AddDayModal } from '@/components/AddDayModal';
 import { createClient } from '@/utils/supabase/client';
 import { Trip, TripDay, Stay } from '@/types';
 import { formatDistance, formatDate } from '@/lib/maps';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Share2, Check, Link2 } from 'lucide-react';
 
 const MapView = lazyLoad(
   () => import('@/components/MapView').then(m => ({ default: m.MapView })),
@@ -105,9 +105,12 @@ export default function TripDetailPage() {
         <aside className="w-[420px] xl:w-[460px] flex-shrink-0 flex flex-col overflow-y-auto space-y-4 pb-4">
           {/* Trip Overview card */}
           <div className="glass-card-strong p-6">
-            <h2 className="font-serif text-3xl font-semibold text-cream-100 mb-2">
-              Trip Overview
-            </h2>
+            <div className="flex items-start justify-between">
+              <h2 className="font-serif text-3xl font-semibold text-cream-100 mb-2">
+                Trip Overview
+              </h2>
+              <ShareButton tripName={trip.name} />
+            </div>
             {totalDistance > 0 && (
               <p className="text-cream-400 text-sm">
                 Total Distance: {formatDistance(totalDistance)}
@@ -158,6 +161,70 @@ export default function TripDetailPage() {
           onClose={() => setShowModal(false)}
           onSuccess={handleDayAdded}
         />
+      )}
+    </div>
+  );
+}
+
+// ─── Share Button ───
+
+function ShareButton({ tripName }: { tripName: string }) {
+  const [copied, setCopied] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  async function handleShare() {
+    const url = window.location.href;
+    const title = `${tripName} — Vietnam Travel Planner`;
+    const text = `Check out my trip: ${tripName}`;
+
+    // Try Web Share API first (mobile + some desktop)
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, text, url });
+        return;
+      } catch {
+        // User cancelled or API not available — fall through to clipboard
+      }
+    }
+
+    // Fallback: copy to clipboard
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setShowTooltip(true);
+      setTimeout(() => { setCopied(false); setShowTooltip(false); }, 2500);
+    } catch {
+      // Final fallback
+      const input = document.createElement('input');
+      input.value = url;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+      setCopied(true);
+      setShowTooltip(true);
+      setTimeout(() => { setCopied(false); setShowTooltip(false); }, 2500);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={handleShare}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-cream-400 hover:text-cream-100 hover:bg-[rgba(200,195,175,0.15)] transition-all text-xs uppercase tracking-wide-custom"
+        title="Share this trip"
+      >
+        {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Share2 className="w-3.5 h-3.5" />}
+        {copied ? 'Copied!' : 'Share'}
+      </button>
+
+      {/* Toast notification */}
+      {showTooltip && (
+        <div className="absolute top-full right-0 mt-2 px-3 py-2 rounded-lg text-xs text-cream-100 whitespace-nowrap animate-fade-in flex items-center gap-1.5"
+          style={{ background: 'rgba(61, 73, 53, 0.95)', border: '1px solid rgba(200, 195, 175, 0.25)' }}>
+          <Link2 className="w-3 h-3 text-green-400" />
+          Link copied to clipboard
+        </div>
       )}
     </div>
   );
