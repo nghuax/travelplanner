@@ -1,0 +1,150 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg:      #59684B;
+  --surface: rgba(200, 195, 175, 0.15);
+  --surface-solid: #667755;
+  --border:  rgba(200, 195, 175, 0.25);
+  --accent:  #8B9A6E;
+  --text:    #F2EDE4;
+  --muted:   rgba(242, 237, 228, 0.6);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: rgba(200, 195, 175, 0.3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(200, 195, 175, 0.5); }
+
+/* Glass card utility */
+.glass {
+  background: rgba(200, 195, 175, 0.12);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(200, 195, 175, 0.2);
+}
+
+.glass-card {
+  background: rgba(200, 195, 175, 0.15);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(200, 195, 175, 0.2);
+  border-radius: 16px;
+}
+
+.glass-card-strong {
+  background: rgba(200, 195, 175, 0.22);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(200, 195, 175, 0.25);
+  border-radius: 16px;
+}
+
+/* Input focus ring */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.5);
+}
+
+/* Leaflet map overrides for olive theme */
+.leaflet-container {
+  background: #3d4935 !important;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.leaflet-control-zoom a {
+  background: rgba(200, 195, 175, 0.15) !important;
+  color: #F2EDE4 !important;
+  border-color: rgba(200, 195, 175, 0.2) !important;
+  backdrop-filter: blur(8px);
+}
+.leaflet-control-zoom a:hover {
+  background: rgba(200, 195, 175, 0.3) !important;
+}
+
+.leaflet-control-attribution {
+  background: rgba(61, 73, 53, 0.8) !important;
+  color: rgba(200, 195, 175, 0.5) !important;
+  font-size: 10px !important;
+}
+.leaflet-control-attribution a {
+  color: rgba(200, 195, 175, 0.6) !important;
+}
+
+/* Map tooltip labels */
+.map-label {
+  background: rgba(61, 73, 53, 0.85) !important;
+  border: 1px solid rgba(200, 195, 175, 0.25) !important;
+  color: #F2EDE4 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  padding: 3px 8px !important;
+  border-radius: 6px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
+}
+.map-label::before {
+  border-top-color: rgba(61, 73, 53, 0.85) !important;
+}
+
+.leaflet-tooltip {
+  background: rgba(61, 73, 53, 0.9) !important;
+  border: 1px solid rgba(200, 195, 175, 0.25) !important;
+  color: #F2EDE4 !important;
+  font-size: 11px !important;
+  padding: 3px 8px !important;
+  border-radius: 6px !important;
+}
+.leaflet-tooltip-top::before {
+  border-top-color: rgba(61, 73, 53, 0.9) !important;
+}
+
+/* Dashed add button */
+.dashed-button {
+  border: 2px dashed rgba(200, 195, 175, 0.35);
+  border-radius: 16px;
+  transition: all 0.2s ease;
+}
+.dashed-button:hover {
+  border-color: rgba(200, 195, 175, 0.55);
+  background: rgba(200, 195, 175, 0.08);
+}
+
+/* Rest stop badge */
+.rest-stop-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: rgba(139, 154, 110, 0.25);
+  border: 1px solid rgba(139, 154, 110, 0.35);
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* Map container with rounded corners */
+.map-container {
+  border-radius: 23px;
+  overflow: hidden;
+}
+
+@layer utilities {
+  .tracking-wide-custom {
+    letter-spacing: 0.15em;
+  }
+}
