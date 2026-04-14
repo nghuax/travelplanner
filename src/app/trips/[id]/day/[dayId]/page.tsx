@@ -442,37 +442,50 @@ function AddAccommodationModal({
   const [ogData, setOgData]       = useState<OgData | null>(null);
   const [autoFilled, setAutoFilled] = useState(false);
 
+  const [ogFailed, setOgFailed] = useState(false);
+
   // Auto-fetch details from booking URL
   useEffect(() => {
-    if (!bookingUrl.trim()) { setOgData(null); setAutoFilled(false); return; }
+    if (!bookingUrl.trim()) { setOgData(null); setAutoFilled(false); setOgFailed(false); return; }
+    // Only fetch if it looks like a URL
+    if (!bookingUrl.trim().startsWith('http')) return;
     const timeout = setTimeout(async () => {
       setOgLoading(true);
       setAutoFilled(false);
+      setOgFailed(false);
       try {
         const res = await fetch(`/api/fetch-og?url=${encodeURIComponent(bookingUrl.trim())}`);
         const data: OgData = await res.json();
         setOgData(data);
 
-        // Auto-fill fields if empty
-        if (data.title && !name) setName(data.title);
-        if (data.imageUrl && !imageUrl) setImageUrl(data.imageUrl);
+        // Check if we actually got useful data back
+        const hasData = !!(data.title || data.imageUrl || data.address || data.rating);
 
-        // Build notes from extracted details
-        if (!notes) {
-          const noteParts: string[] = [];
-          if (data.address) noteParts.push(data.address);
-          if (data.rating) noteParts.push(`Rating: ${data.rating}${data.ratingCount ? ` (${data.ratingCount} reviews)` : ''}`);
-          if (data.priceRange) noteParts.push(`Price: ${data.priceRange}`);
-          if (data.checkIn || data.checkOut) {
-            const times = [data.checkIn ? `Check-in: ${data.checkIn}` : '', data.checkOut ? `Check-out: ${data.checkOut}` : ''].filter(Boolean);
-            if (times.length) noteParts.push(times.join(' / '));
+        if (hasData) {
+          // Auto-fill fields if empty
+          if (data.title && !name) setName(data.title);
+          if (data.imageUrl && !imageUrl) setImageUrl(data.imageUrl);
+
+          // Build notes from extracted details
+          if (!notes) {
+            const noteParts: string[] = [];
+            if (data.address) noteParts.push(data.address);
+            if (data.rating) noteParts.push(`Rating: ${data.rating}${data.ratingCount ? ` (${data.ratingCount} reviews)` : ''}`);
+            if (data.priceRange) noteParts.push(`Price: ${data.priceRange}`);
+            if (data.checkIn || data.checkOut) {
+              const times = [data.checkIn ? `Check-in: ${data.checkIn}` : '', data.checkOut ? `Check-out: ${data.checkOut}` : ''].filter(Boolean);
+              if (times.length) noteParts.push(times.join(' / '));
+            }
+            if (noteParts.length) setNotes(noteParts.join('\n'));
           }
-          if (noteParts.length) setNotes(noteParts.join('\n'));
-        }
 
-        setAutoFilled(true);
+          setAutoFilled(true);
+        } else {
+          // No useful data — site likely blocks scraping
+          setOgFailed(true);
+        }
       } catch {
-        // silently fail
+        setOgFailed(true);
       } finally {
         setOgLoading(false);
       }
@@ -549,8 +562,19 @@ function AddAccommodationModal({
                     <CheckCircle className="w-4 h-4 text-green-400" />
                   </div>
                 )}
+                {ogFailed && !ogLoading && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-400 text-sm">
+                    ⚠
+                  </div>
+                )}
               </div>
-              <p className="text-cream-600 text-xs mt-1">Paste any hotel/Airbnb link to auto-fill details</p>
+              {ogFailed ? (
+                <p className="text-amber-400/80 text-xs mt-1 flex items-center gap-1">
+                  <span>⚠</span> This site doesn&apos;t support auto-fill. Please enter details manually below.
+                </p>
+              ) : (
+                <p className="text-cream-600 text-xs mt-1">Paste any hotel/Airbnb link to auto-fill details</p>
+              )}
             </div>
 
             {/* Auto-fill preview card */}
