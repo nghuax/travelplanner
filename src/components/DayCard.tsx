@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Pencil } from 'lucide-react';
 import { TripDay } from '@/types';
 import { formatDistance } from '@/lib/maps';
 import { createClient } from '@/utils/supabase/client';
@@ -13,9 +13,10 @@ interface DayCardProps {
   isActive?: boolean;
   onClick?: () => void;
   onDelete?: (id: string) => void;
+  onEdit?: (day: TripDay) => void;
 }
 
-export function DayCard({ day, tripId, isActive, onClick, onDelete }: DayCardProps) {
+export function DayCard({ day, tripId, isActive, onClick, onDelete, onEdit }: DayCardProps) {
   const [deleting, setDeleting] = useState(false);
   const [showAccom, setShowAccom] = useState(false);
   const supabase = createClient();
@@ -27,6 +28,12 @@ export function DayCard({ day, tripId, isActive, onClick, onDelete }: DayCardPro
     setDeleting(true);
     await supabase.from('trip_days').delete().eq('id', day.id);
     onDelete?.(day.id);
+  }
+
+  function handleEdit(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    onEdit?.(day);
   }
 
   return (
@@ -94,14 +101,26 @@ export function DayCard({ day, tripId, isActive, onClick, onDelete }: DayCardPro
         </div>
       )}
 
-      {/* Delete */}
-      <button
-        onClick={handleDelete}
-        disabled={deleting}
-        className="absolute top-3 right-3 p-1.5 rounded text-cream-600/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-      >
-        <Trash2 className="w-3.5 h-3.5" />
-      </button>
+      {/* Action buttons */}
+      <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+        {onEdit && (
+          <button
+            onClick={handleEdit}
+            className="p-1.5 rounded text-cream-600/50 hover:text-cream-200 transition-colors"
+            title="Edit day"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        )}
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className="p-1.5 rounded text-cream-600/30 hover:text-red-400 transition-all"
+          title="Delete day"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   );
 }

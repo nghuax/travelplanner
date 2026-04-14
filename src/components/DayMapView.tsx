@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { TripDay } from '@/types';
+import { TripDay, CATEGORY_CONFIG, inferCategory } from '@/types';
 import { TILE_URL, TILE_ATTRIBUTION, decodePolyline } from '@/lib/maps';
 
 interface DayMapViewProps {
@@ -112,22 +112,43 @@ export function DayMapView({ day }: DayMapViewProps) {
       hasBounds = true;
     }
 
-    // Rest stop markers (from stays)
-    if (day.stays && day.stays.length > 0 && day.origin_lat && day.destination_lat) {
+    // Location markers from stays
+    if (day.stays && day.stays.length > 0) {
       day.stays.forEach((stay, i) => {
-        const frac = (i + 1) / ((day.stays?.length ?? 0) + 1);
-        const lat = day.origin_lat! + (day.destination_lat! - day.origin_lat!) * frac;
-        const lng = (day.origin_lng ?? 0) + ((day.destination_lng ?? 0) - (day.origin_lng ?? 0)) * frac;
+        const cat = inferCategory(stay);
+        const cfg = CATEGORY_CONFIG[cat];
+
+        // Use actual coordinates if available, otherwise interpolate along route
+        let lat: number;
+        let lng: number;
+
+        if (stay.lat && stay.lng) {
+          lat = stay.lat;
+          lng = stay.lng;
+        } else if (day.origin_lat && day.destination_lat) {
+          // Interpolate position along route
+          const frac = (i + 1) / ((day.stays?.length ?? 0) + 1);
+          lat = day.origin_lat! + (day.destination_lat! - day.origin_lat!) * frac;
+          lng = (day.origin_lng ?? 0) + ((day.destination_lng ?? 0) - (day.origin_lng ?? 0)) * frac;
+        } else {
+          return; // Can't place marker without coordinates
+        }
 
         L.circleMarker([lat, lng], {
-          radius: 5,
-          fillColor: '#D4A76A',
+          radius: 6,
+          fillColor: cfg.color,
           fillOpacity: 1,
           color: '#59684B',
           weight: 1.5,
         })
-          .bindTooltip(stay.name || 'Rest Stop', { direction: 'top', offset: [0, -6] })
+          .bindTooltip(
+            `${cfg.emoji} ${stay.name || cfg.label}`,
+            { direction: 'top', offset: [0, -8] }
+          )
           .addTo(map);
+
+        bounds.extend([lat, lng]);
+        hasBounds = true;
       });
     }
 

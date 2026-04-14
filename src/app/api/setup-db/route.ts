@@ -46,6 +46,14 @@ const SCHEMA_STATEMENTS = [
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`,
 
+  // Migration: add new columns to stays (idempotent)
+  `ALTER TABLE public.stays ADD COLUMN IF NOT EXISTS category TEXT`,
+  `ALTER TABLE public.stays ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION`,
+  `ALTER TABLE public.stays ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION`,
+  `ALTER TABLE public.stays ADD COLUMN IF NOT EXISTS address TEXT`,
+  `ALTER TABLE public.stays ADD COLUMN IF NOT EXISTS google_maps_url TEXT`,
+  `ALTER TABLE public.stays ADD COLUMN IF NOT EXISTS sort_order INTEGER`,
+
   `ALTER TABLE public.trips ENABLE ROW LEVEL SECURITY`,
   `ALTER TABLE public.trip_days ENABLE ROW LEVEL SECURITY`,
   `ALTER TABLE public.stays ENABLE ROW LEVEL SECURITY`,

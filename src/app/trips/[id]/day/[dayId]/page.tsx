@@ -8,15 +8,35 @@ import lazyLoad from 'next/dynamic';
 import Link from 'next/link';
 import Image from 'next/image';
 import { NavBar } from '@/components/NavBar';
+import { EditDayModal } from '@/components/EditDayModal';
+import { AddLocationModal } from '@/components/AddLocationModal';
 import { createClient } from '@/utils/supabase/client';
-import { TripDay, Stay, Trip } from '@/types';
+import { TripDay, Stay, Trip, LocationCategory, CATEGORY_CONFIG, ALL_CATEGORIES, inferCategory } from '@/types';
 import { formatDistance } from '@/lib/maps';
-import { ArrowLeft, Trash2, Loader2, X, MapPin, Bed, Star, CheckCircle, ExternalLink, Share2, Check, Link2 } from 'lucide-react';
+import {
+  ArrowLeft, Trash2, Loader2, X, MapPin, Bed, Star, CheckCircle,
+  ExternalLink, Share2, Check, Link2, Pencil, Plus, Filter,
+  UtensilsCrossed, Camera, Music, ShoppingBag, Coffee, Navigation
+} from 'lucide-react';
 
 const DayMapView = lazyLoad(
   () => import('@/components/DayMapView').then(m => ({ default: m.DayMapView })),
   { ssr: false, loading: () => <div className="w-full h-full bg-olive-700 flex items-center justify-center"><div className="w-8 h-8 border-2 border-cream-400/30 border-t-cream-400 rounded-full animate-spin" /></div> }
 );
+
+// ─── Category icon mapping ───
+function CategoryIcon({ category, size = 14 }: { category: LocationCategory; size?: number }) {
+  const props = { width: size, height: size };
+  switch (category) {
+    case 'food':          return <UtensilsCrossed {...props} />;
+    case 'sightseeing':   return <Camera {...props} />;
+    case 'entertainment': return <Music {...props} />;
+    case 'shopping':      return <ShoppingBag {...props} />;
+    case 'accommodation': return <Bed {...props} />;
+    case 'rest_stop':     return <Coffee {...props} />;
+    default:              return <MapPin {...props} />;
+  }
+}
 
 export default function DayDetailPage() {
   const { id, dayId } = useParams<{ id: string; dayId: string }>();
@@ -28,8 +48,12 @@ export default function DayDetailPage() {
   const [loading, setLoading] = useState(true);
 
   // Modal states
-  const [showRestStopModal, setShowRestStopModal] = useState(false);
-  const [showAccomModal, setShowAccomModal]       = useState(false);
+  const [showAddLocation, setShowAddLocation] = useState(false);
+  const [showAccomModal, setShowAccomModal]   = useState(false);
+  const [showEditDay, setShowEditDay]         = useState(false);
+
+  // Filter
+  const [activeFilter, setActiveFilter] = useState<LocationCategory | 'all'>('all');
 
   const fetchData = useCallback(async () => {
     const [{ data: dayData }, { data: tripData }] = await Promise.all([
@@ -57,9 +81,27 @@ export default function DayDetailPage() {
     setStays(prev => [...prev, stay]);
   }
 
-  // Separate rest stops from accommodation
-  const restStops = stays.filter(s => !s.booking_url && !s.image_url);
-  const accommodations = stays.filter(s => s.booking_url || s.image_url);
+  function handleDayUpdated(updatedDay: TripDay & { stays: Stay[] }) {
+    setDay(updatedDay);
+    setStays(updatedDay.stays || []);
+    setShowEditDay(false);
+  }
+
+  // Group stays by category
+  const staysByCategory = stays.reduce<Record<LocationCategory, Stay[]>>((acc, stay) => {
+    const cat = inferCategory(stay);
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(stay);
+    return acc;
+  }, {} as Record<LocationCategory, Stay[]>);
+
+  // Get categories that have stays
+  const activeCategories = ALL_CATEGORIES.filter(cat => (staysByCategory[cat]?.length ?? 0) > 0);
+
+  // Filtered stays
+  const filteredCategories = activeFilter === 'all'
+    ? activeCategories
+    : activeCategories.filter(cat => cat === activeFilter);
 
   if (loading) {
     return (
@@ -86,13 +128,15 @@ export default function DayDetailPage() {
       <div className="flex flex-1 overflow-hidden px-4 gap-4" style={{ height: 'calc(100vh - 68px)' }}>
         {/* Map */}
         <div className="flex-1 relative map-container">
-          <DayMapView day={day} />
+          <DayMapView day={{ ...day, stays }} />
         </div>
 
         {/* Sidebar */}
-        <aside className="w-[420px] xl:w-[460px] flex-shrink-0 overflow-y-auto pb-4">
-          <div className="glass-card-strong p-6 space-y-6">
-            {/* Back link + Share */}
+        <aside className="w-[420px] xl:w-[460px] flex-shrink-0 overflow-y-auto pb-4 space-y-4">
+
+          {/* Day header card */}
+          <div className="glass-card-strong p-6 space-y-4">
+            {/* Back link + actions */}
             <div className="flex items-center justify-between">
               <Link
                 href={`/trips/${id}`}
@@ -101,7 +145,17 @@ export default function DayDetailPage() {
                 <ArrowLeft className="w-4 h-4" />
                 Back to trip
               </Link>
-              <ShareButton label={`Day ${day.day_number}: ${day.origin_city} → ${day.destination_city}`} />
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setShowEditDay(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-cream-400 hover:text-cream-100 hover:bg-[rgba(200,195,175,0.15)] transition-all text-xs uppercase tracking-wide-custom"
+                  title="Edit day"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Edit
+                </button>
+                <ShareButton label={`Day ${day.day_number}: ${day.origin_city} → ${day.destination_city}`} />
+              </div>
             </div>
 
             {/* Day heading */}
@@ -125,65 +179,99 @@ export default function DayDetailPage() {
                 {day.description}
               </p>
             )}
-
-            {/* Rest Stops */}
-            <div>
-              <h3 className="text-cream-500 text-xs font-medium uppercase tracking-wide-custom mb-3">
-                Rest Stops
-              </h3>
-              {restStops.length > 0 ? (
-                <div className="space-y-2">
-                  {restStops.map(stay => (
-                    <div
-                      key={stay.id}
-                      className="flex items-center justify-between rounded-lg px-4 py-2.5"
-                      style={{ background: 'rgba(139, 154, 110, 0.25)', border: '1px solid rgba(139, 154, 110, 0.35)' }}
-                    >
-                      <span className="flex items-center gap-2 text-cream-200 text-sm">
-                        <MapPin className="w-3.5 h-3.5 text-amber-400" />
-                        {stay.name || 'Rest Stop'}
-                      </span>
-                      <button
-                        onClick={() => handleDeleteStay(stay.id)}
-                        className="text-cream-600/40 hover:text-red-400 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-cream-500 text-sm">No rest stops added.</p>
-              )}
-              <button
-                onClick={() => setShowRestStopModal(true)}
-                className="text-cream-400 text-sm mt-2 hover:text-cream-200 transition-colors"
-              >
-                + Add rest stop
-              </button>
-            </div>
-
-            {/* Accommodation */}
-            <div>
-              <h3 className="text-cream-500 text-xs font-medium uppercase tracking-wide-custom mb-3">
-                Accommodation
-              </h3>
-              {accommodations.length > 0 && (
-                <div className="space-y-3">
-                  {accommodations.map(stay => (
-                    <AccommodationCard key={stay.id} stay={stay} onDelete={handleDeleteStay} />
-                  ))}
-                </div>
-              )}
-              <button
-                onClick={() => setShowAccomModal(true)}
-                className="dashed-button py-4 w-full flex items-center justify-center gap-2 mt-3"
-              >
-                <span className="text-cream-400 text-lg font-light">+</span>
-                <span className="text-cream-400 text-sm">Add Accommodation</span>
-              </button>
-            </div>
           </div>
+
+          {/* Category filter pills */}
+          {activeCategories.length > 1 && (
+            <div className="flex flex-wrap gap-2 px-1">
+              <button
+                onClick={() => setActiveFilter('all')}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                  activeFilter === 'all'
+                    ? 'bg-cream-200 text-olive-900'
+                    : 'text-cream-400 hover:text-cream-200'
+                }`}
+                style={activeFilter !== 'all' ? { background: 'rgba(200, 195, 175, 0.1)', border: '1px solid rgba(200, 195, 175, 0.15)' } : {}}
+              >
+                <Filter className="w-3 h-3 inline mr-1" />
+                All ({stays.length})
+              </button>
+              {activeCategories.map(cat => {
+                const cfg = CATEGORY_CONFIG[cat];
+                const isActive = activeFilter === cat;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setActiveFilter(isActive ? 'all' : cat)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                      isActive ? 'text-white' : 'text-cream-400 hover:text-cream-200'
+                    }`}
+                    style={{
+                      background: isActive ? cfg.color : 'rgba(200, 195, 175, 0.1)',
+                      border: `1px solid ${isActive ? cfg.color : 'rgba(200, 195, 175, 0.15)'}`,
+                    }}
+                  >
+                    {cfg.emoji} {cfg.label} ({staysByCategory[cat]?.length ?? 0})
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Location sections grouped by category */}
+          {filteredCategories.map(cat => {
+            const cfg = CATEGORY_CONFIG[cat];
+            const catStays = staysByCategory[cat] || [];
+            return (
+              <div key={cat} className="glass-card p-5 space-y-3">
+                <h3
+                  className="text-xs font-medium uppercase tracking-wide-custom flex items-center gap-2"
+                  style={{ color: cfg.color }}
+                >
+                  <CategoryIcon category={cat} size={14} />
+                  {cfg.label}
+                  <span className="text-cream-600 text-[10px] ml-auto">{catStays.length}</span>
+                </h3>
+                <div className="space-y-2">
+                  {catStays.map(stay => (
+                    <LocationItem
+                      key={stay.id}
+                      stay={stay}
+                      category={cat}
+                      onDelete={handleDeleteStay}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Empty state */}
+          {stays.length === 0 && (
+            <div className="glass-card p-8 text-center">
+              <MapPin className="w-8 h-8 text-cream-500/40 mx-auto mb-3" />
+              <p className="text-cream-400 text-sm mb-1">No locations added yet</p>
+              <p className="text-cream-600 text-xs">Add restaurants, sights, shops, and more to this day</p>
+            </div>
+          )}
+
+          {/* Add location button */}
+          <button
+            onClick={() => setShowAddLocation(true)}
+            className="dashed-button py-4 w-full flex items-center justify-center gap-2"
+          >
+            <Plus className="w-4 h-4 text-cream-400" />
+            <span className="text-cream-400 text-sm">Add Location</span>
+          </button>
+
+          {/* Legacy accommodation button */}
+          <button
+            onClick={() => setShowAccomModal(true)}
+            className="dashed-button py-3 w-full flex items-center justify-center gap-2"
+          >
+            <Bed className="w-3.5 h-3.5 text-cream-500" />
+            <span className="text-cream-500 text-xs">Add Accommodation (with booking link)</span>
+          </button>
         </aside>
       </div>
 
@@ -194,16 +282,15 @@ export default function DayDetailPage() {
         </button>
       </div>
 
-      {/* Rest Stop Modal */}
-      {showRestStopModal && (
-        <AddRestStopModal
+      {/* Modals */}
+      {showAddLocation && (
+        <AddLocationModal
           dayId={dayId}
-          onClose={() => setShowRestStopModal(false)}
+          onClose={() => setShowAddLocation(false)}
           onSuccess={handleStayAdded}
         />
       )}
 
-      {/* Accommodation Modal */}
       {showAccomModal && (
         <AddAccommodationModal
           dayId={dayId}
@@ -211,6 +298,130 @@ export default function DayDetailPage() {
           onSuccess={handleStayAdded}
         />
       )}
+
+      {showEditDay && day && (
+        <EditDayModal
+          day={{ ...day, stays }}
+          tripStartDate={trip?.start_date || null}
+          onClose={() => setShowEditDay(false)}
+          onSuccess={handleDayUpdated}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Location Item ───
+
+function LocationItem({
+  stay,
+  category,
+  onDelete,
+}: {
+  stay: Stay;
+  category: LocationCategory;
+  onDelete: (id: string) => void;
+}) {
+  const [imgError, setImgError] = useState(false);
+  const cfg = CATEGORY_CONFIG[category];
+  const hasImage = stay.image_url && !imgError;
+  const isAccommodation = category === 'accommodation';
+
+  return (
+    <div
+      className="rounded-xl overflow-hidden group relative transition-all hover:scale-[1.01]"
+      style={{
+        background: 'rgba(200, 195, 175, 0.08)',
+        border: '1px solid rgba(200, 195, 175, 0.12)',
+      }}
+    >
+      {/* Image (for accommodation or locations with images) */}
+      {hasImage && (
+        <div className="relative h-36">
+          <Image
+            src={stay.image_url!}
+            alt={stay.name || 'Location'}
+            fill
+            className="object-cover"
+            onError={() => setImgError(true)}
+          />
+          {/* Category badge on image */}
+          <span
+            className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-medium backdrop-blur-sm flex items-center gap-1"
+            style={{ background: `${cfg.color}CC`, color: 'white' }}
+          >
+            <CategoryIcon category={category} size={10} />
+            {cfg.label}
+          </span>
+        </div>
+      )}
+
+      <div className="p-3 space-y-1">
+        {/* Name + category indicator */}
+        <div className="flex items-start gap-2">
+          {!hasImage && (
+            <span
+              className="mt-0.5 p-1 rounded-md flex-shrink-0"
+              style={{ background: `${cfg.color}20`, color: cfg.color }}
+            >
+              <CategoryIcon category={category} size={12} />
+            </span>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-cream-200 text-sm font-medium truncate">{stay.name || 'Location'}</p>
+            {stay.address && (
+              <p className="text-cream-500 text-xs flex items-start gap-1 mt-0.5">
+                <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                <span className="line-clamp-2">{stay.address}</span>
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Notes */}
+        {stay.notes && !stay.address && (
+          <p className="text-cream-500 text-xs line-clamp-2 pl-6">{stay.notes}</p>
+        )}
+        {stay.notes && stay.address && stay.notes !== stay.address && (
+          <p className="text-cream-500 text-xs line-clamp-2 pl-6">{stay.notes}</p>
+        )}
+
+        {/* Links */}
+        <div className="flex items-center gap-3 pl-6">
+          {stay.google_maps_url && (
+            <a
+              href={stay.google_maps_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-cream-400 text-xs hover:text-cream-200 transition-colors flex items-center gap-1"
+              onClick={e => e.stopPropagation()}
+            >
+              <Navigation className="w-3 h-3" />
+              Directions
+            </a>
+          )}
+          {stay.booking_url && (
+            <a
+              href={stay.booking_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-cream-400 text-xs hover:text-cream-200 transition-colors flex items-center gap-1"
+              onClick={e => e.stopPropagation()}
+            >
+              <ExternalLink className="w-3 h-3" />
+              View booking
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* Delete button */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(stay.id); }}
+        className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/40 text-cream-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
     </div>
   );
 }
@@ -264,149 +475,7 @@ function ShareButton({ label }: { label: string }) {
   );
 }
 
-// ─── Accommodation Card ───
-
-function AccommodationCard({ stay, onDelete }: { stay: Stay; onDelete: (id: string) => void }) {
-  const [imgError, setImgError] = useState(false);
-
-  return (
-    <div className="rounded-xl overflow-hidden group relative">
-      {stay.image_url && !imgError ? (
-        <div className="relative h-44">
-          <Image
-            src={stay.image_url}
-            alt={stay.name || 'Accommodation'}
-            fill
-            className="object-cover"
-            onError={() => setImgError(true)}
-          />
-        </div>
-      ) : (
-        <div className="h-32 bg-olive-700 flex items-center justify-center">
-          <Bed className="w-8 h-8 text-cream-500/40" />
-        </div>
-      )}
-      <div className="p-3 bg-[rgba(200,195,175,0.1)]">
-        <p className="text-cream-200 text-sm font-medium">{stay.name || 'Accommodation'}</p>
-        {stay.notes && <p className="text-cream-500 text-xs mt-0.5">{stay.notes}</p>}
-        {stay.booking_url && (
-          <a
-            href={stay.booking_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-cream-400 text-xs hover:text-cream-200 transition-colors"
-          >
-            View booking &rarr;
-          </a>
-        )}
-      </div>
-      <button
-        onClick={(e) => { e.stopPropagation(); onDelete(stay.id); }}
-        className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/40 text-cream-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-      >
-        <Trash2 className="w-3.5 h-3.5" />
-      </button>
-    </div>
-  );
-}
-
-// ─── Add Rest Stop Modal ───
-
-function AddRestStopModal({
-  dayId,
-  onClose,
-  onSuccess,
-}: {
-  dayId: string;
-  onClose: () => void;
-  onSuccess: (stay: Stay) => void;
-}) {
-  const supabase = createClient();
-  const [name, setName]     = useState('');
-  const [notes, setNotes]   = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState('');
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) { setError('Name is required'); return; }
-    setSaving(true);
-    setError('');
-
-    const { data, error: err } = await supabase
-      .from('stays')
-      .insert({
-        trip_day_id: dayId,
-        name: name.trim(),
-        notes: notes.trim() || null,
-        booking_url: null,
-        image_url: null,
-      })
-      .select()
-      .single();
-
-    if (err || !data) {
-      setError(err?.message || 'Failed to add rest stop');
-      setSaving(false);
-      return;
-    }
-
-    onSuccess(data as Stay);
-    onClose();
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[1100] p-4">
-      <div className="w-full max-w-md rounded-2xl overflow-hidden" style={{ background: '#4a5940', border: '1px solid rgba(200, 195, 175, 0.2)' }}>
-        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'rgba(200, 195, 175, 0.15)' }}>
-          <h2 className="font-serif text-xl font-semibold text-cream-100">Add Rest Stop</h2>
-          <button onClick={onClose} className="p-2 rounded-lg text-cream-400 hover:text-cream-200 transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-          <div>
-            <label className="block text-cream-400 text-xs font-medium uppercase tracking-wide-custom mb-1.5">
-              <MapPin className="w-3 h-3 inline mr-1" /> Stop Name *
-            </label>
-            <input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="e.g. Bảo Lộc Coffee Village"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-olive-800 text-cream-200 placeholder-cream-600 text-sm"
-              style={{ border: '1px solid rgba(200, 195, 175, 0.2)' }}
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="block text-cream-400 text-xs font-medium uppercase tracking-wide-custom mb-1.5">
-              Notes
-            </label>
-            <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              placeholder="Lunch break, photo spot, etc."
-              rows={2}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-olive-800 text-cream-200 placeholder-cream-600 text-sm resize-none"
-              style={{ border: '1px solid rgba(200, 195, 175, 0.2)' }}
-            />
-          </div>
-          {error && <p className="text-red-400 text-xs">{error}</p>}
-          <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl text-cream-300 text-sm font-medium" style={{ background: 'rgba(200, 195, 175, 0.1)', border: '1px solid rgba(200, 195, 175, 0.15)' }}>
-              Cancel
-            </button>
-            <button type="submit" disabled={saving} className="flex-1 py-2.5 rounded-xl text-olive-900 text-sm font-semibold bg-cream-200 hover:bg-cream-100 transition-colors disabled:opacity-50">
-              {saving ? 'Adding...' : 'Add Stop'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ─── Add Accommodation Modal ───
+// ─── Add Accommodation Modal (legacy, with booking URL support) ───
 
 interface OgData {
   title: string | null;
@@ -441,13 +510,11 @@ function AddAccommodationModal({
   const [ogLoading, setOgLoading] = useState(false);
   const [ogData, setOgData]       = useState<OgData | null>(null);
   const [autoFilled, setAutoFilled] = useState(false);
-
-  const [ogFailed, setOgFailed] = useState(false);
+  const [ogFailed, setOgFailed]   = useState(false);
 
   // Auto-fetch details from booking URL
   useEffect(() => {
     if (!bookingUrl.trim()) { setOgData(null); setAutoFilled(false); setOgFailed(false); return; }
-    // Only fetch if it looks like a URL
     if (!bookingUrl.trim().startsWith('http')) return;
     const timeout = setTimeout(async () => {
       setOgLoading(true);
@@ -458,15 +525,12 @@ function AddAccommodationModal({
         const data: OgData = await res.json();
         setOgData(data);
 
-        // Check if we actually got useful data back
         const hasData = !!(data.title || data.imageUrl || data.address || data.rating);
 
         if (hasData) {
-          // Auto-fill fields if empty
           if (data.title && !name) setName(data.title);
           if (data.imageUrl && !imageUrl) setImageUrl(data.imageUrl);
 
-          // Build notes from extracted details
           if (!notes) {
             const noteParts: string[] = [];
             if (data.address) noteParts.push(data.address);
@@ -481,7 +545,6 @@ function AddAccommodationModal({
 
           setAutoFilled(true);
         } else {
-          // No useful data — site likely blocks scraping
           setOgFailed(true);
         }
       } catch {
@@ -500,25 +563,30 @@ function AddAccommodationModal({
     setSaving(true);
     setError('');
 
-    const { data, error: err } = await supabase
-      .from('stays')
-      .insert({
-        trip_day_id: dayId,
-        name: name.trim() || null,
-        booking_url: bookingUrl.trim() || null,
-        image_url: imageUrl.trim() || null,
-        notes: notes.trim() || null,
-      })
-      .select()
-      .single();
+    const payload: Record<string, unknown> = {
+      trip_day_id: dayId,
+      name:        name.trim() || null,
+      booking_url: bookingUrl.trim() || null,
+      image_url:   imageUrl.trim() || null,
+      notes:       notes.trim() || null,
+      category:    'accommodation' as LocationCategory,
+    };
 
-    if (err || !data) {
-      setError(err?.message || 'Failed to add accommodation');
+    // Try with category column, fall back without
+    let result = await supabase.from('stays').insert(payload).select().single();
+    if (result.error?.message?.includes('does not exist')) {
+      const { category: _c, ...basic } = payload;
+      void _c;
+      result = await supabase.from('stays').insert(basic).select().single();
+    }
+
+    if (result.error || !result.data) {
+      setError(result.error?.message || 'Failed to add accommodation');
       setSaving(false);
       return;
     }
 
-    onSuccess(data as Stay);
+    onSuccess(result.data as Stay);
     onClose();
   }
 
@@ -538,35 +606,16 @@ function AddAccommodationModal({
 
         <div className="overflow-y-auto flex-1">
           <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-            {/* Booking URL — primary input */}
+            {/* Booking URL */}
             <div>
               <label className={labelClass}>
                 <ExternalLink className="w-3 h-3 inline mr-1" /> Booking URL
               </label>
               <div className="relative">
-                <input
-                  value={bookingUrl}
-                  onChange={e => setBookingUrl(e.target.value)}
-                  placeholder="https://booking.com/... or any hotel link"
-                  className={inputClass}
-                  style={inputStyle}
-                  autoFocus
-                />
-                {ogLoading && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <Loader2 className="w-4 h-4 text-cream-400 animate-spin" />
-                  </div>
-                )}
-                {autoFilled && !ogLoading && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <CheckCircle className="w-4 h-4 text-green-400" />
-                  </div>
-                )}
-                {ogFailed && !ogLoading && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-400 text-sm">
-                    ⚠
-                  </div>
-                )}
+                <input value={bookingUrl} onChange={e => setBookingUrl(e.target.value)} placeholder="https://booking.com/... or any hotel link" className={inputClass} style={inputStyle} autoFocus />
+                {ogLoading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-cream-400 animate-spin" />}
+                {autoFilled && !ogLoading && <CheckCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-400" />}
+                {ogFailed && !ogLoading && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-400 text-sm">⚠</span>}
               </div>
               {ogFailed ? (
                 <p className="text-amber-400/80 text-xs mt-1 flex items-center gap-1">
@@ -577,45 +626,27 @@ function AddAccommodationModal({
               )}
             </div>
 
-            {/* Auto-fill preview card */}
+            {/* Preview card */}
             {autoFilled && ogData && (imageUrl || name) && (
               <div className="rounded-xl overflow-hidden" style={{ background: 'rgba(200, 195, 175, 0.1)', border: '1px solid rgba(200, 195, 175, 0.15)' }}>
                 {imageUrl && (
                   <div className="relative h-36">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={imageUrl} alt={name || 'Preview'} className="w-full h-full object-cover" />
                     {ogData.siteName && (
-                      <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-medium bg-black/50 text-cream-200 backdrop-blur-sm">
-                        {ogData.siteName}
-                      </span>
+                      <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-medium bg-black/50 text-cream-200 backdrop-blur-sm">{ogData.siteName}</span>
                     )}
                   </div>
                 )}
                 <div className="p-3 space-y-1.5">
                   <p className="text-cream-100 text-sm font-medium">{name}</p>
-                  {ogData.address && (
-                    <p className="text-cream-500 text-xs flex items-start gap-1">
-                      <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                      {ogData.address}
-                    </p>
-                  )}
+                  {ogData.address && <p className="text-cream-500 text-xs flex items-start gap-1"><MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />{ogData.address}</p>}
                   <div className="flex items-center gap-3 flex-wrap">
-                    {ogData.rating && (
-                      <span className="flex items-center gap-1 text-amber-400 text-xs">
-                        <Star className="w-3 h-3 fill-current" />
-                        {ogData.rating}
-                        {ogData.ratingCount && <span className="text-cream-500">({ogData.ratingCount})</span>}
-                      </span>
-                    )}
-                    {ogData.priceRange && (
-                      <span className="text-cream-400 text-xs">{ogData.priceRange}</span>
-                    )}
+                    {ogData.rating && <span className="flex items-center gap-1 text-amber-400 text-xs"><Star className="w-3 h-3 fill-current" />{ogData.rating}{ogData.ratingCount && <span className="text-cream-500">({ogData.ratingCount})</span>}</span>}
+                    {ogData.priceRange && <span className="text-cream-400 text-xs">{ogData.priceRange}</span>}
                   </div>
-                  {ogData.description && (
-                    <p className="text-cream-500 text-xs line-clamp-2">{ogData.description}</p>
-                  )}
-                  <p className="text-green-400/80 text-[10px] flex items-center gap-1 pt-1">
-                    <CheckCircle className="w-3 h-3" /> Details auto-filled from link
-                  </p>
+                  {ogData.description && <p className="text-cream-500 text-xs line-clamp-2">{ogData.description}</p>}
+                  <p className="text-green-400/80 text-[10px] flex items-center gap-1 pt-1"><CheckCircle className="w-3 h-3" /> Details auto-filled from link</p>
                 </div>
               </div>
             )}
@@ -625,53 +656,26 @@ function AddAccommodationModal({
               <label className={labelClass}>
                 <Bed className="w-3 h-3 inline mr-1" /> Name {autoFilled && <span className="text-cream-600 normal-case tracking-normal">(auto-filled)</span>}
               </label>
-              <input
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="Hotel / Airbnb / Hostel name"
-                className={inputClass}
-                style={inputStyle}
-              />
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="Hotel / Airbnb / Hostel name" className={inputClass} style={inputStyle} />
             </div>
 
-            {/* Image URL (hidden if already auto-filled, can expand) */}
+            {/* Image URL */}
             <div>
-              <label className={labelClass}>
-                Image URL {autoFilled && imageUrl && <span className="text-cream-600 normal-case tracking-normal">(auto-filled)</span>}
-              </label>
-              <input
-                value={imageUrl}
-                onChange={e => setImageUrl(e.target.value)}
-                placeholder="https://..."
-                className={inputClass}
-                style={inputStyle}
-              />
+              <label className={labelClass}>Image URL {autoFilled && imageUrl && <span className="text-cream-600 normal-case tracking-normal">(auto-filled)</span>}</label>
+              <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." className={inputClass} style={inputStyle} />
             </div>
 
             {/* Notes */}
             <div>
-              <label className={labelClass}>
-                Notes {autoFilled && notes && <span className="text-cream-600 normal-case tracking-normal">(auto-filled)</span>}
-              </label>
-              <textarea
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                placeholder="Check-in time, address, special instructions..."
-                rows={3}
-                className={`${inputClass} resize-none`}
-                style={inputStyle}
-              />
+              <label className={labelClass}>Notes {autoFilled && notes && <span className="text-cream-600 normal-case tracking-normal">(auto-filled)</span>}</label>
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Check-in time, address..." rows={3} className={`${inputClass} resize-none`} style={inputStyle} />
             </div>
 
             {error && <p className="text-red-400 text-xs">{error}</p>}
 
             <div className="flex gap-3 pt-1">
-              <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl text-cream-300 text-sm font-medium" style={{ background: 'rgba(200, 195, 175, 0.1)', border: '1px solid rgba(200, 195, 175, 0.15)' }}>
-                Cancel
-              </button>
-              <button type="submit" disabled={saving} className="flex-1 py-2.5 rounded-xl text-olive-900 text-sm font-semibold bg-cream-200 hover:bg-cream-100 transition-colors disabled:opacity-50">
-                {saving ? 'Adding...' : 'Add Accommodation'}
-              </button>
+              <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl text-cream-300 text-sm font-medium" style={{ background: 'rgba(200, 195, 175, 0.1)', border: '1px solid rgba(200, 195, 175, 0.15)' }}>Cancel</button>
+              <button type="submit" disabled={saving} className="flex-1 py-2.5 rounded-xl text-olive-900 text-sm font-semibold bg-cream-200 hover:bg-cream-100 transition-colors disabled:opacity-50">{saving ? 'Adding...' : 'Add Accommodation'}</button>
             </div>
           </form>
         </div>

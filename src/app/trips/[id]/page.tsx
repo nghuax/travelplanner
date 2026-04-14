@@ -11,8 +11,9 @@ import { DayCard } from '@/components/DayCard';
 import { AddDayModal } from '@/components/AddDayModal';
 import { createClient } from '@/utils/supabase/client';
 import { Trip, TripDay, Stay } from '@/types';
-import { formatDistance, formatDate } from '@/lib/maps';
+import { formatDistance } from '@/lib/maps';
 import { Loader2, Share2, Check, Link2 } from 'lucide-react';
+import { EditDayModal } from '@/components/EditDayModal';
 
 const MapView = lazyLoad(
   () => import('@/components/MapView').then(m => ({ default: m.MapView })),
@@ -36,6 +37,7 @@ export default function TripDetailPage() {
   const [loading, setLoading]     = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [activeDayId, setActiveDayId] = useState<string | undefined>();
+  const [editingDay, setEditingDay] = useState<(TripDay & { stays: Stay[] }) | null>(null);
 
   const fetchTrip = useCallback(async () => {
     const { data } = await supabase
@@ -62,6 +64,11 @@ export default function TripDetailPage() {
 
   function handleDayDeleted(dayId: string) {
     setDays(prev => prev.filter(d => d.id !== dayId));
+  }
+
+  function handleDayUpdated(updatedDay: TripDay & { stays: Stay[] }) {
+    setDays(prev => prev.map(d => d.id === updatedDay.id ? updatedDay : d).sort((a, b) => a.day_number - b.day_number));
+    setEditingDay(null);
   }
 
   const totalDistance = days.reduce((s, d) => s + (d.distance_km ?? 0), 0);
@@ -132,6 +139,7 @@ export default function TripDetailPage() {
               isActive={day.id === activeDayId}
               onClick={() => setActiveDayId(prev => prev === day.id ? undefined : day.id)}
               onDelete={handleDayDeleted}
+              onEdit={(d) => setEditingDay(d as TripDay & { stays: Stay[] })}
             />
           ))}
 
@@ -160,6 +168,15 @@ export default function TripDetailPage() {
           tripStartDate={trip.start_date}
           onClose={() => setShowModal(false)}
           onSuccess={handleDayAdded}
+        />
+      )}
+
+      {editingDay && (
+        <EditDayModal
+          day={editingDay}
+          tripStartDate={trip.start_date}
+          onClose={() => setEditingDay(null)}
+          onSuccess={handleDayUpdated}
         />
       )}
     </div>
